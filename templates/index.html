@@ -1,8 +1,6 @@
-<html>
-<head>
-    <title>Take The Stick</title>
-</head>
-<body>
-Hello
-</body>
-</html>
+{% extends "base.html" %}
+{% block body %}
+    Logged in<br />
+    Access token: {{ access_token }}<br />
+    <a href="{{ url_for('signout') }}">Log out</a>
+{% endblock %}
