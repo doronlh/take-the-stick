@@ -1,5 +1,7 @@
 colorlog==4.1.0
 Flask==1.1.2
+gql==0.5.0
+graphql-core==2.3.1
 jwcrypto==0.7
 python-dotenv==0.13.0
 requests==2.23.0

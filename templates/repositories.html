@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block body %}
+    <a href="{{ url_for('signout') }}">Log out</a>
+    <h2>Repositories for {{ installation.account.login }}</h2>
+    {% if repositories %}
+        <table style="border: 1px solid black;border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th style="border: 1px solid black;border-collapse: collapse;">Repository</th>
+                    <th style="border: 1px solid black;border-collapse: collapse;">Who Can Push?</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for repository in repositories %}
+                    <tr>
+                        <td style="border: 1px solid black;"><a href="{{ repository.url }}" target="_blank">{{ repository.nameWithOwner }}</a></td>
+                        <td style="border: 1px solid black;">
+                            {% if repository.branchProtectionRules.nodes[0] %}
+                                {% for user in repository.branchProtectionRules.nodes[0].pushAllowances.nodes %}
+                                    {{ user.actor.name }} ({{ user.actor.login }}){% if not loop.last %},{% endif %}
+                                {% endfor %}
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <form action="{{ url_for('take_the_stick', installation_id=installation.id) }}" method="post">
+            <input type="submit" value="Take The Stick" />
+        </form>
+    {% else %}
+        <b>No repos available</b>
+    {% endif %}
+{% endblock %}

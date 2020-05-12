@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block body %}
-    Logged in<br />
-    Access token: {{ access_token }}<br />
     <a href="{{ url_for('signout') }}">Log out</a>
+    <ul>
+        {% for installation in installations %}
+            <li><a href="{{ url_for('repositories', installation_id=installation.id) }}">{{ installation.account.login }}</a></li>
+        {% endfor %}
+    </ul>
 {% endblock %}

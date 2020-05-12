@@ -1,6 +1,4 @@
-import json
 import os
-import requests
 from flask import (
     abort,
     Flask,
@@ -11,10 +9,12 @@ from flask import (
     session,
     url_for,
 )
+
+from utils.api import v3_get, v4_request, cache_v4_schema
 from utils.auth import (
     generate_github_app_token,
-    get_github_app_installation_token,
     generate_secure_random_string,
+    get_github_app_installation_token,
     verify_github_webhook_payload, get_access_token,
 )
 from utils.logging import configure as configure_logging
@@ -23,6 +23,7 @@ from utils.logging import configure as configure_logging
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ['FLASK_SECRET_KEY']
 configure_logging(app)
+cache_v4_schema()
 
 
 @app.route('/')
@@ -39,10 +40,116 @@ def index():
         refresh_token_expiry=session.get('refresh_token_expiry'),
     )
 
-    if session.get('access_token') is None:
+    access_token = session.get('access_token')
+    if access_token is None:
         return redirect(url_for('signin'))
 
-    return render_template('index.html', access_token=session.get('access_token'))
+    try:
+        installations = v3_get('/user/installations', access_token)['installations']
+    except KeyError:
+        installations = None
+
+    if installations and len(installations) == 1:
+        return redirect(url_for('repositories', installation_id=installations[0]['id']))
+
+    return render_template('index.html', installations=installations)
+
+
+@app.route('/repositories/<int:installation_id>')
+def repositories(installation_id):
+    app_identifier = int(os.environ['GITHUB_APP_IDENTIFIER'])
+    private_key = os.environ['GITHUB_PRIVATE_KEY'].encode()
+
+    access_token = session.get('access_token')
+    if access_token is None:
+        return redirect(url_for('signin'))
+
+    github_app_token = generate_github_app_token(app_identifier, private_key)
+    installation = v3_get(f'/app/installations/{installation_id}', github_app_token)
+
+    try:
+        repositories_ = v3_get(f'/user/installations/{installation_id}/repositories', access_token)['repositories']
+    except KeyError:
+        repositories_ = None
+
+    repositories_ = [v4_request(f'''
+        query {{
+            repository(name: "{repository['name']}", owner: "{repository['owner']['login']}") {{
+                nameWithOwner
+                url
+                branchProtectionRules(first: 1) {{
+                    nodes {{
+                        id
+                        pushAllowances(first: 20) {{
+                            nodes {{
+                                actor {{
+                                    __typename
+                                    ... on User {{
+                                        login
+                                        name
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        }}
+    ''', access_token)['repository'] for repository in repositories_]
+    return render_template('repositories.html', installation=installation, repositories=repositories_)
+
+
+@app.route('/take-the-stick/<int:installation_id>', methods=['POST'])
+def take_the_stick(installation_id):
+    access_token = session.get('access_token')
+    if access_token is None:
+        return redirect(url_for('signin'))
+
+    try:
+        repositories_ = v3_get(f'/user/installations/{installation_id}/repositories', access_token)['repositories']
+    except KeyError:
+        repositories_ = None
+
+    user_id = v4_request('query { viewer { id }}', access_token)['viewer']['id']
+
+    for repository in repositories_:
+
+        branch_protection_rule_id = v4_request(f'''
+            query {{
+                repository(name: "{repository['name']}", owner: "{repository['owner']['login']}") {{
+                    branchProtectionRules(first: 1) {{
+                        nodes {{
+                            id
+                        }}
+                    }}
+                }}
+            }}
+        ''', access_token)['repository']['branchProtectionRules']['nodes'][0]['id']
+
+        branch_protection_rule = v4_request(f'''
+            mutation {{
+                updateBranchProtectionRule(input: {{
+                        branchProtectionRuleId: "{branch_protection_rule_id}",
+                        pushActorIds: ["{user_id}"], 
+                        restrictsPushes: true
+                }}) {{
+                    branchProtectionRule {{
+                        pushAllowances(first: 1) {{
+                            nodes {{
+                                actor {{
+                                    ... on User {{
+                                        login
+                                        name
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }}
+            }}
+        ''', access_token)['updateBranchProtectionRule']['branchProtectionRule']
+
+    return redirect(url_for('repositories', installation_id=installation_id))
 
 
 @app.route('/signin')
@@ -65,15 +172,15 @@ def signin():
 
     if session['access_token']:
         return redirect(url_for('index'))
-    else:
-        if session.get('state') is None:
-            session['state'] = generate_secure_random_string()
-        return render_template(
-            'signin.html',
-            client_id=os.environ['GITHUB_APP_CLIENT_ID'],
-            redirect_uri=url_for(request.endpoint, _external=True),
-            state=session['state'],
-        )
+
+    if session.get('state') is None:
+        session['state'] = generate_secure_random_string()
+    return render_template(
+        'signin.html',
+        client_id=os.environ['GITHUB_APP_CLIENT_ID'],
+        redirect_uri=url_for(request.endpoint, _external=True),
+        state=session['state'],
+    )
 
 
 @app.route('/signout')
@@ -101,8 +208,7 @@ def github_event_handler():
     github_app_token = generate_github_app_token(app_identifier, private_key)
     installation_id = request.json['installation']['id']
     github_app_installation_token = get_github_app_installation_token(github_app_token, installation_id)
-    app.logger.info(json.dumps(request.json, sort_keys=True, indent=4))
-    return "hi"
+    return {'success': True}
 
 
 @app.route('/favicon.ico')

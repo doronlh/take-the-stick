@@ -8,6 +8,8 @@ from os import urandom
 from jwcrypto.jwt import JWT
 from jwcrypto.jwk import JWK
 
+from utils.api import v3_post
+
 
 def generate_secure_random_string():
     random_bytes = urandom(64)
@@ -36,20 +38,14 @@ def generate_github_app_token(github_app_identifier, github_private_key):
 
 
 def get_github_app_installation_token(github_app_token, installation_id):
-    response = requests.post(
-        f'https://api.github.com/app/installations/{installation_id}/access_tokens',
-        headers={
-            'Authorization': f'Bearer {github_app_token}',
-            'Accept': 'application/vnd.github.machine-man-preview+json',
-        }
-    ).json()
+    response = v3_post(f'/app/installations/{installation_id}/access_tokens', github_app_token)
     try:
         return response['token']
     except KeyError:
         return None
 
 
-def get_timestamp():
+def get_now_timestamp():
     return calendar.timegm(datetime.utcnow().utctimetuple())
 
 
@@ -65,7 +61,7 @@ def get_access_token(
     code=None,
 ):
 
-    timestamp = get_timestamp()
+    timestamp = get_now_timestamp()
 
     refresh_buffer = 30
     access_token_expired = access_token_expiry is None or access_token_expiry - timestamp < refresh_buffer
@@ -93,10 +89,12 @@ def get_access_token(
         'Accept': 'application/json'
     }).json()
 
-    return (
-        response['access_token'],
-        timestamp + response['expires_in'],
-        response['refresh_token'],
-        timestamp + response['refresh_token_expires_in']
-    )
-ß
+    try:
+        return (
+            response['access_token'],
+            timestamp + response['expires_in'],
+            response['refresh_token'],
+            timestamp + response['refresh_token_expires_in']
+        )
+    except KeyError:
+        return (None,) * 4
