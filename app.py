@@ -15,7 +15,8 @@ from utils.auth import (
     generate_github_app_token,
     generate_secure_random_string,
     get_github_app_installation_token,
-    verify_github_webhook_payload, get_access_token,
+    verify_github_webhook_payload,
+    get_access_token,
 )
 from utils.logging import configure as configure_logging
 
@@ -65,6 +66,7 @@ def repositories(installation_id):
         return redirect(url_for('signin'))
 
     github_app_token = generate_github_app_token(app_identifier, private_key)
+    github_app_installation_token = get_github_app_installation_token(github_app_token, installation_id)
     installation = v3_get(f'/app/installations/{installation_id}', github_app_token)
 
     try:
@@ -95,15 +97,21 @@ def repositories(installation_id):
                 }}
             }}
         }}
-    ''', access_token)['repository'] for repository in repositories_]
+    ''', github_app_installation_token)['repository'] for repository in repositories_]
     return render_template('repositories.html', installation=installation, repositories=repositories_)
 
 
 @app.route('/take-the-stick/<int:installation_id>', methods=['POST'])
 def take_the_stick(installation_id):
+    app_identifier = int(os.environ['GITHUB_APP_IDENTIFIER'])
+    private_key = os.environ['GITHUB_PRIVATE_KEY'].encode()
+
     access_token = session.get('access_token')
     if access_token is None:
         return redirect(url_for('signin'))
+
+    github_app_token = generate_github_app_token(app_identifier, private_key)
+    github_app_installation_token = get_github_app_installation_token(github_app_token, installation_id)
 
     try:
         repositories_ = v3_get(f'/user/installations/{installation_id}/repositories', access_token)['repositories']
@@ -124,7 +132,7 @@ def take_the_stick(installation_id):
                     }}
                 }}
             }}
-        ''', access_token)['repository']['branchProtectionRules']['nodes'][0]['id']
+        ''', github_app_installation_token)['repository']['branchProtectionRules']['nodes'][0]['id']
 
         branch_protection_rule = v4_request(f'''
             mutation {{
@@ -147,7 +155,7 @@ def take_the_stick(installation_id):
                     }}
                 }}
             }}
-        ''', access_token)['updateBranchProtectionRule']['branchProtectionRule']
+        ''', github_app_installation_token)['updateBranchProtectionRule']['branchProtectionRule']
 
     return redirect(url_for('repositories', installation_id=installation_id))
 
