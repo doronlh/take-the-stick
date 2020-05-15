@@ -8,6 +8,7 @@
                 <tr>
                     <th style="border: 1px solid black;border-collapse: collapse;">Repository</th>
                     <th style="border: 1px solid black;border-collapse: collapse;">Who Can Push?</th>
+                    <th style="border: 1px solid black;border-collapse: collapse;">Pushes Restricted?</th>
                 </tr>
             </thead>
             <tbody>
@@ -21,12 +22,20 @@
                                 {% endfor %}
                             {% endif %}
                         </td>
+                        <td style="border: 1px solid black;">
+                            {% if repository.branchProtectionRules.nodes[0].restrictsPushes %}
+                                Restricted
+                            {% else %}
+                                Not Restricted
+                            {% endif %}
+                        </td>
                     </tr>
                 {% endfor %}
             </tbody>
         </table>
         <form action="{{ url_for('take_the_stick', installation_id=installation.id) }}" method="post">
-            <input type="submit" value="Take The Stick" />
+            <button type="submit" name="action" value="take-the-stick" >Take The Stick</button>
+            <button type="submit" name="action" value="return-the-stick">Return The Stick</button>
         </form>
     {% else %}
         <b>No repos available</b>

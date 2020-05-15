@@ -27,6 +27,11 @@ configure_logging(app)
 cache_v4_schema()
 
 
+@app.before_request
+def make_session_permanent():
+    session.permanent = True
+
+
 @app.route('/')
 def index():
     (session['access_token'],
@@ -58,6 +63,19 @@ def index():
 
 @app.route('/repositories/<int:installation_id>')
 def repositories(installation_id):
+    (session['access_token'],
+     session['access_token_expiry'],
+     session['refresh_token'],
+     session['refresh_token_expiry']) = get_access_token(
+        current_access_token=session.get('access_token'),
+        github_app_client_id=os.environ['GITHUB_APP_CLIENT_ID'],
+        github_app_client_secret=os.environ['GITHUB_APP_CLIENT_SECRET'],
+        access_token_expiry=session.get('access_token_expiry'),
+        refresh_token=session.get('refresh_token'),
+        refresh_token_expiry=session.get('refresh_token_expiry'),
+    )
+
+
     app_identifier = int(os.environ['GITHUB_APP_IDENTIFIER'])
     private_key = os.environ['GITHUB_PRIVATE_KEY'].encode()
 
@@ -82,6 +100,7 @@ def repositories(installation_id):
                 branchProtectionRules(first: 1) {{
                     nodes {{
                         id
+                        restrictsPushes
                         pushAllowances(first: 20) {{
                             nodes {{
                                 actor {{
@@ -103,6 +122,19 @@ def repositories(installation_id):
 
 @app.route('/take-the-stick/<int:installation_id>', methods=['POST'])
 def take_the_stick(installation_id):
+    (session['access_token'],
+     session['access_token_expiry'],
+     session['refresh_token'],
+     session['refresh_token_expiry']) = get_access_token(
+        current_access_token=session.get('access_token'),
+        github_app_client_id=os.environ['GITHUB_APP_CLIENT_ID'],
+        github_app_client_secret=os.environ['GITHUB_APP_CLIENT_SECRET'],
+        access_token_expiry=session.get('access_token_expiry'),
+        refresh_token=session.get('refresh_token'),
+        refresh_token_expiry=session.get('refresh_token_expiry'),
+    )
+
+
     app_identifier = int(os.environ['GITHUB_APP_IDENTIFIER'])
     private_key = os.environ['GITHUB_PRIVATE_KEY'].encode()
 
@@ -119,7 +151,6 @@ def take_the_stick(installation_id):
         repositories_ = None
 
     user_id = v4_request('query { viewer { id }}', access_token)['viewer']['id']
-
     for repository in repositories_:
 
         branch_protection_rule_id = v4_request(f'''
@@ -134,12 +165,19 @@ def take_the_stick(installation_id):
             }}
         ''', github_app_installation_token)['repository']['branchProtectionRules']['nodes'][0]['id']
 
+        if request.form['action'] == 'take-the-stick':
+            push_actor_ids = f'"{user_id}"'
+            restrict_pushes = 'true'
+        else:
+            push_actor_ids = ''
+            restrict_pushes = 'false'
+
         branch_protection_rule = v4_request(f'''
             mutation {{
                 updateBranchProtectionRule(input: {{
                         branchProtectionRuleId: "{branch_protection_rule_id}",
-                        pushActorIds: ["{user_id}"], 
-                        restrictsPushes: true
+                        pushActorIds: [{push_actor_ids}], 
+                        restrictsPushes: {restrict_pushes}
                 }}) {{
                     branchProtectionRule {{
                         pushAllowances(first: 1) {{
