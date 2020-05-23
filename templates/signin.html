@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block body %}
     <div style="width: 240px;padding: 0 20px">
-        <a class="btn btn-block btn-social btn-github" href="https://github.com/login/oauth/authorize?client_id={{ client_id }}&redirect_uri={{ redirect_uri }}&state={{ state | urlencode}}">
+        <a class="btn btn-block btn-social btn-github" href="{{ signin_url }}">
             <span class="fa fa-github"></span> Sign in with GitHub
         </a>
     </div>
