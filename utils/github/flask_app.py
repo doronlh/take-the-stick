@@ -16,7 +16,7 @@ class FlaskSessionStore(SessionStore):
 
     @property
     def access_token(self):
-        return session[self._ACCESS_TOKEN_SESSION_NAME]
+        return session.get(self._ACCESS_TOKEN_SESSION_NAME)
 
     @access_token.setter
     def access_token(self, val):
@@ -27,7 +27,7 @@ class FlaskSessionStore(SessionStore):
 
     @property
     def access_token_expiry(self):
-        return session[self._ACCESS_TOKEN_EXPIRY_SESSION_NAME]
+        return session.get(self._ACCESS_TOKEN_EXPIRY_SESSION_NAME)
 
     @access_token_expiry.setter
     def access_token_expiry(self, val):
@@ -38,7 +38,7 @@ class FlaskSessionStore(SessionStore):
 
     @property
     def refresh_token(self):
-        return session[self._REFRESH_TOKEN_SESSION_NAME]
+        return session.get(self._REFRESH_TOKEN_SESSION_NAME)
 
     @refresh_token.setter
     def refresh_token(self, val):
@@ -49,7 +49,7 @@ class FlaskSessionStore(SessionStore):
 
     @property
     def refresh_token_expiry(self):
-        return session[self._REFRESH_TOKEN_EXPIRY_SESSION_NAME]
+        return session.get(self._REFRESH_TOKEN_EXPIRY_SESSION_NAME)
 
     @refresh_token_expiry.setter
     def refresh_token_expiry(self, val):
@@ -60,7 +60,7 @@ class FlaskSessionStore(SessionStore):
 
     @property
     def state(self):
-        return session[self._STATE_SESSION_NAME]
+        return session.get(self._STATE_SESSION_NAME)
 
     @state.setter
     def state(self, val):

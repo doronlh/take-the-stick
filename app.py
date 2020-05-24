@@ -34,6 +34,8 @@ def index():
         installations = github_app.v3_user_get('/user/installations')['installations']
     except KeyError:
         installations = None
+    except SignInNeededException:
+        return redirect(url_for('signin'))
 
     if installations and len(installations) == 1:
         return redirect(url_for('repositories', installation_id=installations[0]['id']))
@@ -43,7 +45,6 @@ def index():
 
 @app.route('/repositories/<int:installation_id>')
 def repositories(installation_id):
-
     installation = github_app.v3_app_get(f'/app/installations/{installation_id}')
 
     try:
@@ -75,7 +76,7 @@ def repositories(installation_id):
                 }}
             }}
         }}
-    ''')['repository'] for repository in repositories_]
+    ''', installation_id=installation_id)['repository'] for repository in repositories_]
     return render_template('repositories.html', installation=installation, repositories=repositories_)
 
 
@@ -99,7 +100,7 @@ def take_the_stick(installation_id):
                     }}
                 }}
             }}
-        ''')['repository']['branchProtectionRules']['nodes'][0]['id']
+        ''', installation_id=installation_id)['repository']['branchProtectionRules']['nodes'][0]['id']
 
         if request.form['action'] == 'take-the-stick':
             push_actor_ids = f'"{user_id}"'
@@ -129,7 +130,7 @@ def take_the_stick(installation_id):
                     }}
                 }}
             }}
-        ''')
+        ''', installation_id=installation_id)
 
     return redirect(url_for('repositories', installation_id=installation_id))
 
@@ -137,7 +138,7 @@ def take_the_stick(installation_id):
 @app.route('/signin')
 def signin():
     try:
-        github_app.raise_if_not_signed_in()
+        github_app.raise_if_user_not_signed_in()
         return redirect(url_for('index'))
     except SignInNeededException as sine:
         return render_template('signin.html', signin_url=sine.signin_url)

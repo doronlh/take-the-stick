@@ -247,7 +247,7 @@ class GitHubApp:
 
     def _get_installation_token(self, installation_id):
 
-        expired = self._is_token_expired(self._current_installation_token_expiries[installation_id])
+        expired = self._is_token_expired(self._current_installation_token_expiries.get(installation_id))
         if expired:
             response = self.v3_app_post(f'/app/installations/{installation_id}/access_tokens')
             try:
@@ -263,12 +263,13 @@ class GitHubApp:
         return self._current_installation_tokens[installation_id]
 
     def _get_access_token(self, code=None, sent_state=None):
-        refresh_token_expired = self._is_token_expired(self._session_store.refresh_token_expiry)
         current_access_token = self._session_store.access_token
+        access_token_expired = self._is_token_expired(self._session_store.access_token_expiry)
         current_refresh_token = self._session_store.refresh_token
+        refresh_token_expired = self._is_token_expired(self._session_store.refresh_token_expiry)
         expected_state = self._session_store.state
 
-        if self.is_user_signed_in():
+        if current_access_token and not access_token_expired:
             return current_access_token
         elif current_refresh_token and not refresh_token_expired:
             request_params = {
@@ -318,11 +319,12 @@ class GitHubApp:
             state=state
         )
 
-    def _get_token_for_request(self, token_type, installation_id=None, sent_state=None, code=None):
+    def _get_token_for_request(self, token_type, installation_id=None):
         return {
             TokenType.APP: lambda: self._get_app_token(),
             TokenType.INSTALLATION: lambda: self._get_installation_token(installation_id),
-            TokenType.ACCESS: lambda: self._get_access_token(code=code, sent_state=sent_state),
+            TokenType.ACCESS: lambda: self._get_access_token(
+                code=self._session_store.code, sent_state=self._session_store.sent_state),
         }[token_type]()
 
     def _is_event_signature_valid(self):
@@ -330,14 +332,11 @@ class GitHubApp:
         return hmac.compare_digest(mac.hexdigest(), self._session_store.event_signature)
 
     def v3_request(self, requests_method, token_type, url, data=None, installation_id=None):
-        sent_state = self._session_store.sent_state
-        code = self._session_store.code
-
         return requests_method(
             f'https://api.github.com{url}',
             data=data,
             headers={
-                'Authorization': f'Bearer {self._get_token_for_request(token_type, installation_id, sent_state, code)}',
+                'Authorization': f'Bearer {self._get_token_for_request(token_type, installation_id)}',
                 'Accept': 'application/vnd.github.machine-man-preview+json',
             }
         ).json()
@@ -349,11 +348,12 @@ class GitHubApp:
     v3_user_get = partialmethod(v3_request, requests.get, TokenType.ACCESS)
     v3_user_post = partialmethod(v3_request, requests.post, TokenType.ACCESS)
 
-    def v4_request(self, request_string, token_type, installation_id=None, sent_state=None, code=None):
+    def v4_request(self, token_type, request_string, installation_id=None):
+
         transport = RequestsHTTPTransport(
             url='https://api.github.com/graphql',
             headers={
-                'Authorization': f'Bearer {self._get_token_for_request(token_type, installation_id, sent_state, code)}'
+                'Authorization': f'Bearer {self._get_token_for_request(token_type, installation_id)}'
             },
             use_json=True,
         )
@@ -375,9 +375,8 @@ class GitHubApp:
 
         return current_access_token and not access_token_expired
 
-    def raise_if_not_signed_in(self):
-        if not self.is_user_signed_in():
-            raise self._signin_needed_exception()
+    def raise_if_user_not_signed_in(self):
+        self._get_token_for_request(TokenType.ACCESS)
 
     def signout(self):
         self._session_store.access_token = None
