@@ -369,12 +369,6 @@ class GitHubApp:
     v4_installation_request = partialmethod(v4_request, TokenType.INSTALLATION)
     v4_user_request = partialmethod(v4_request, TokenType.ACCESS)
 
-    def is_user_signed_in(self):
-        access_token_expired = self._is_token_expired(self._session_store.access_token_expiry)
-        current_access_token = self._session_store.access_token
-
-        return current_access_token and not access_token_expired
-
     def raise_if_user_not_signed_in(self):
         self._get_token_for_request(TokenType.ACCESS)
 
