@@ -168,8 +168,11 @@ class TokenType(Enum):
 _V4_SCHEMA = None
 
 
-def cache_v4_schema():
+def _cache_v4_schema():
     global _V4_SCHEMA
+
+    if _V4_SCHEMA:
+        return
 
     with open('github_v4_schema.graphql') as source:
         introspection = json.loads(source.read())
@@ -201,6 +204,8 @@ class GitHubApp:
         self._current_app_token_expiry = None
         self._current_installation_tokens = {}
         self._current_installation_token_expiries = {}
+
+        _cache_v4_schema()
 
     @staticmethod
     def _convert_datetime_to_timestamp(dt):

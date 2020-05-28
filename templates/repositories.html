@@ -3,6 +3,7 @@
     <a href="{{ url_for('signout') }}">Log out</a>
     <h2>Repositories for {{ installation.account.login }}</h2>
     {% if repositories %}
+        <h3>Branch Protection</h3>
         <table style="border: 1px solid black;border-collapse: collapse;">
             <thead>
                 <tr>
@@ -37,6 +38,39 @@
             <button type="submit" name="action" value="take-the-stick" >Take The Stick</button>
             <button type="submit" name="action" value="return-the-stick">Return The Stick</button>
         </form>
+        <h3>Pull Requests</h3>
+        {% if grouped_pull_requests %}
+            <table>
+                <thead>
+                    <tr>
+                        <td>&nbsp;</td>
+                        {% for repository2 in repositories %}
+                            <td style="border: 1px solid black;">{{ repository2.nameWithOwner }}</td>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for jira_key, pull_requests in grouped_pull_requests.items() %}
+                        <tr>
+                            <td style="border: 1px solid black;">{{ jira_key }}</td>
+                            {% for repository2 in repositories %}
+                                {% set pull_request = pull_requests[repository2.nameWithOwner] %}
+                                <td style="border: 1px solid black;">
+                                    {% if pull_request %}
+                                        <a href="{{ pull_request.url }}" target="_blank">{{ pull_request.title }}</a>
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
+                                </td>
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            No pull requests open
+        {% endif %}
+
     {% else %}
         <b>No repos available</b>
     {% endif %}

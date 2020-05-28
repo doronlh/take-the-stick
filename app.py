@@ -1,4 +1,7 @@
 import os
+import re
+from collections import defaultdict
+
 from flask import (
     abort,
     Flask,
@@ -10,7 +13,7 @@ from flask import (
     url_for,
 )
 
-from utils.github.app import SignInNeededException, cache_v4_schema, BadEventSignatureException
+from utils.github.app import SignInNeededException, BadEventSignatureException
 from utils.github.flask_app import FlaskGitHubApp
 from utils.logging import configure as configure_logging
 
@@ -20,7 +23,6 @@ github_app = FlaskGitHubApp()
 github_app.init_app('signin')
 app.config['SECRET_KEY'] = os.environ['FLASK_SECRET_KEY']
 configure_logging(app)
-cache_v4_schema()
 
 
 @app.before_request
@@ -74,10 +76,30 @@ def repositories(installation_id):
                         }}
                     }}
                 }}
+                pullRequests(states: OPEN, first: 100) {{
+                    nodes {{
+                        title
+                        url
+                    }}
+                }}
             }}
         }}
     ''', installation_id=installation_id)['repository'] for repository in repositories_]
-    return render_template('repositories.html', installation=installation, repositories=repositories_)
+
+    repository_names = [repository['nameWithOwner'] for repository in repositories_]
+    grouped_pull_requests = defaultdict(lambda: dict.fromkeys(repository_names, None))
+    for repository in repositories_:
+        for pull_request in repository['pullRequests']['nodes']:
+            jira_key = re.search(r'(?:\s|^)([A-Z]+-[0-9]+)(?=\s|$|:)', pull_request['title'])
+            if jira_key:
+                grouped_pull_requests[jira_key[0]][repository['nameWithOwner']] = pull_request
+
+    return render_template(
+        'repositories.html',
+        installation=installation,
+        repositories=repositories_,
+        grouped_pull_requests=grouped_pull_requests
+    )
 
 
 @app.route('/take-the-stick/<int:installation_id>', methods=['POST'])
