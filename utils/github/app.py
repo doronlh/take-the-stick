@@ -379,12 +379,14 @@ class GitHubApp:
         self._session_store.refresh_token_expiry = None
 
     def handle_event(self):
+        event_payload = json.loads(self._session_store.event_payload.decode())
+
         if self._is_event_signature_valid():
             return EventData(
                 name=self._session_store.event_name,
                 delivery_id=self._session_store.event_delivery_id,
-                installation_id=self._session_store.event_payload.json['installation']['id'],
-                payload=self._session_store.event_payload.json,
+                installation_id=event_payload['installation']['id'],
+                payload=event_payload,
             )
         else:
             raise BadEventSignatureException()
