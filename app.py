@@ -15,12 +15,14 @@ from flask import (
 
 from utils.github.app import SignInNeededException, BadEventSignatureException
 from utils.github.flask_app import FlaskGitHubApp
+from utils.github_requests import GitHubRequests
 from utils.logging import configure as configure_logging
 
 
 app = Flask(__name__)
 github_app = FlaskGitHubApp()
 github_app.init_app('signin')
+github_requests = GitHubRequests(github_app)
 app.config['SECRET_KEY'] = os.environ['FLASK_SECRET_KEY']
 configure_logging(app)
 
@@ -33,7 +35,7 @@ def make_session_permanent():
 @app.route('/')
 def index():
     try:
-        installations = github_app.v3_user_get('/user/installations')['installations']
+        installations = github_requests.get_installations_for_user()
     except KeyError:
         installations = None
     except SignInNeededException:
@@ -47,45 +49,9 @@ def index():
 
 @app.route('/repositories/<int:installation_id>')
 def repositories(installation_id):
-    installation = github_app.v3_app_get(f'/app/installations/{installation_id}')
 
-    try:
-        repositories_ = github_app.v3_user_get(f'/user/installations/{installation_id}/repositories')['repositories']
-    except KeyError:
-        repositories_ = None
-
-    repositories_ = [github_app.v4_installation_request(f'''
-        query {{
-            repository(name: "{repository['name']}", owner: "{repository['owner']['login']}") {{
-                nameWithOwner
-                url
-                branchProtectionRules(first: 1) {{
-                    nodes {{
-                        id
-                        restrictsPushes
-                        pushAllowances(first: 20) {{
-                            nodes {{
-                                actor {{
-                                    __typename
-                                    ... on User {{
-                                        login
-                                        name
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }}
-                }}
-                pullRequests(states: OPEN, first: 100) {{
-                    nodes {{
-                        title
-                        url
-                    }}
-                }}
-            }}
-        }}
-    ''', installation_id=installation_id)['repository'] for repository in repositories_]
-
+    installation = github_requests.get_installation(installation_id)
+    repositories_ = github_requests.get_repositories(installation_id)
     repository_names = [repository['nameWithOwner'] for repository in repositories_]
     grouped_pull_requests = defaultdict(lambda: dict.fromkeys(repository_names, None))
     for repository in repositories_:
@@ -104,55 +70,15 @@ def repositories(installation_id):
 
 @app.route('/take-the-stick/<int:installation_id>', methods=['POST'])
 def take_the_stick(installation_id):
-    try:
-        repositories_ = github_app.v3_user_get(f'/user/installations/{installation_id}/repositories')['repositories']
-    except KeyError:
-        repositories_ = None
 
-    user_id = github_app.v4_user_request('query { viewer { id }}')['viewer']['id']
-    for repository in repositories_:
+    for repository in github_requests.get_repositories(installation_id):
 
-        branch_protection_rule_id = github_app.v4_installation_request(f'''
-            query {{
-                repository(name: "{repository['name']}", owner: "{repository['owner']['login']}") {{
-                    branchProtectionRules(first: 1) {{
-                        nodes {{
-                            id
-                        }}
-                    }}
-                }}
-            }}
-        ''', installation_id=installation_id)['repository']['branchProtectionRules']['nodes'][0]['id']
-
-        if request.form['action'] == 'take-the-stick':
-            push_actor_ids = f'"{user_id}"'
-            restrict_pushes = 'true'
-        else:
-            push_actor_ids = ''
-            restrict_pushes = 'false'
-
-        github_app.v4_installation_request(f'''
-            mutation {{
-                updateBranchProtectionRule(input: {{
-                        branchProtectionRuleId: "{branch_protection_rule_id}",
-                        pushActorIds: [{push_actor_ids}], 
-                        restrictsPushes: {restrict_pushes}
-                }}) {{
-                    branchProtectionRule {{
-                        pushAllowances(first: 1) {{
-                            nodes {{
-                                actor {{
-                                    ... on User {{
-                                        login
-                                        name
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }}
-                }}
-            }}
-        ''', installation_id=installation_id)
+        github_requests.set_branch_protection(
+            installation_id=installation_id,
+            repository_name=repository['name'],
+            respository_owner=repository['owner']['login'],
+            user_id=github_requests.get_current_user_id() if request.form['action'] == 'take-the-stick' else None
+        )
 
     return redirect(url_for('repositories', installation_id=installation_id))
 
