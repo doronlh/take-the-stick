@@ -97,3 +97,16 @@ class GitHubRequests:
                 }}
             }}
         ''', installation_id=installation_id)
+
+    def get_file_contents(self, installation_id, repository_name, repository_owner, branch, path):
+        return self._github_app.v4_installation_request(f'''
+            query {{
+                repository(name: "{repository_name}", owner: "{repository_owner}") {{
+                    object(expression: "{branch}:{path}") {{
+                        ... on Blob {{
+                            text
+                        }}
+                    }}
+                }}
+            }}
+        ''', installation_id=installation_id)

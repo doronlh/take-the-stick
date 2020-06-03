@@ -83,6 +83,18 @@ def take_the_stick(installation_id):
     return redirect(url_for('repositories', installation_id=installation_id))
 
 
+@app.route('/merge/<int:installation_id>/<jira_key>', methods=['GET'])
+def merge(installation_id, jira_key):
+    # file_contents = github_requests.get_file_contents(
+    #     installation_id=installation_id,
+    #     repository_name='Athena',
+    #     repository_owner='CyberJackGit',
+    #     branch='master',
+    #     path='requirements.txt'
+    # )
+    pass
+
+
 @app.route('/signin')
 def signin():
     try:

@@ -52,7 +52,10 @@
                 <tbody>
                     {% for jira_key, pull_requests in grouped_pull_requests.items() %}
                         <tr>
-                            <td style="border: 1px solid black;">{{ jira_key }}</td>
+                            <td style="border: 1px solid black;">
+                                {{ jira_key }}<br/>
+                                <a href="{{ url_for('merge', installation_id=installation.id, jira_key=jira_key) }}">Merge</a>
+                            </td>
                             {% for repository2 in repositories %}
                                 {% set pull_request = pull_requests[repository2.nameWithOwner] %}
                                 <td style="border: 1px solid black;">
