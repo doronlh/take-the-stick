@@ -189,12 +189,12 @@ class GitHubApp:
         'Accept': 'application/json'
     }
 
-    def __init__(self, client_id, client_secret, identifier, private_key, webhook_secret, session_store,
+    def __init__(self, client_id, client_secret, identifier, private_key_path, webhook_secret, session_store,
                  signin_redirect_uri, process_signin_redirect_uri=None):
         self._client_id = client_id
         self._client_secret = client_secret
         self._identifier = identifier
-        self._private_key = private_key
+        self._private_key = self._read_private_key(private_key_path)
         self._webhook_secret = webhook_secret
         self._session_store = session_store
         self._signin_redirect_uri = signin_redirect_uri
@@ -206,6 +206,11 @@ class GitHubApp:
         self._current_installation_token_expiries = {}
 
         _cache_v4_schema()
+
+    def _read_private_key(self, private_key_path):
+        with open(private_key_path, 'rb') as file:
+            private_key = file.read()
+        return private_key
 
     @staticmethod
     def _convert_datetime_to_timestamp(dt):

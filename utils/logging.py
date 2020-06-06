@@ -1,7 +1,6 @@
 import logging
 import os
 from colorlog import ColoredFormatter
-from flask.logging import default_handler
 from logging.handlers import RotatingFileHandler
 
 

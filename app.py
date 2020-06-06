@@ -1,55 +1,62 @@
-import os
 import re
+import uvicorn
 from collections import defaultdict
-
-from flask import (
-    abort,
-    Flask,
-    redirect,
-    render_template,
-    request,
-    send_from_directory,
-    session,
-    url_for,
-)
+from starlette.applications import Starlette
+from starlette.config import Config
+from starlette.datastructures import Secret
+from starlette.exceptions import HTTPException
+from starlette.middleware import Middleware
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import RedirectResponse, FileResponse
+from starlette.staticfiles import StaticFiles
+from starlette.templating import Jinja2Templates
 
 from utils.github.app import SignInNeededException, BadEventSignatureException
-from utils.github.flask_app import FlaskGitHubApp
+from utils.github.starlette_app import StarletteGitHubApp, RequestContextMiddleware
 from utils.github_requests import GitHubRequests
-from utils.logging import configure as configure_logging
+# from utils.logging import configure as configure_logging
 
 
-app = Flask(__name__)
-github_app = FlaskGitHubApp()
-github_app.init_app('signin')
+config = Config('.env')
+SECRET_KEY = config('SECRET_KEY', cast=Secret)
+
+
+middleware = [
+    Middleware(SessionMiddleware, secret_key=SECRET_KEY),
+    Middleware(RequestContextMiddleware),
+]
+
+app = Starlette(debug=True, middleware=middleware)
+templates = Jinja2Templates(directory='templates')
+app.mount('/static', StaticFiles(directory='static'), name='static')
+
+github_app = StarletteGitHubApp(config, 'signin')
 github_requests = GitHubRequests(github_app)
-app.config['SECRET_KEY'] = os.environ['FLASK_SECRET_KEY']
-configure_logging(app)
-
-
-@app.before_request
-def make_session_permanent():
-    session.permanent = True
+# configure_logging(app)
 
 
 @app.route('/')
-def index():
+async def index(request):
     try:
         installations = github_requests.get_installations_for_user()
     except KeyError:
         installations = None
     except SignInNeededException:
-        return redirect(url_for('signin'))
-
+        return RedirectResponse(request.url_for('signin'))
     if installations and len(installations) == 1:
-        return redirect(url_for('repositories', installation_id=installations[0]['id']))
+        response = RedirectResponse(request.url_for('repositories', installation_id=installations[0]['id']))
+    else:
+        response = templates.TemplateResponse('index.html', {
+            'request': request,
+            'installations': installations,
+        })
 
-    return render_template('index.html', installations=installations)
+    return response
 
 
-@app.route('/repositories/<int:installation_id>')
-def repositories(installation_id):
-
+@app.route('/repositories/{installation_id:int}')
+async def repositories(request):
+    installation_id = request.path_params['installation_id']
     installation = github_requests.get_installation(installation_id)
     repositories_ = github_requests.get_repositories(installation_id)
     repository_names = [repository['nameWithOwner'] for repository in repositories_]
@@ -60,31 +67,35 @@ def repositories(installation_id):
             if jira_key:
                 grouped_pull_requests[jira_key[0]][repository['nameWithOwner']] = pull_request
 
-    return render_template(
-        'repositories.html',
-        installation=installation,
-        repositories=repositories_,
-        grouped_pull_requests=grouped_pull_requests
+    return templates.TemplateResponse(
+        'repositories.html', {
+            'request': request,
+            'installation': installation,
+            'repositories': repositories_,
+            'grouped_pull_requests': grouped_pull_requests,
+        }
     )
 
 
-@app.route('/take-the-stick/<int:installation_id>', methods=['POST'])
-def take_the_stick(installation_id):
-
+@app.route('/take-the-stick/{installation_id:int}', methods=['POST'])
+async def take_the_stick(request):
+    installation_id = request.path_params['installation_id']
+    form = await request.form()
     for repository in github_requests.get_repositories(installation_id):
-
         github_requests.set_branch_protection(
             installation_id=installation_id,
             repository_name=repository['name'],
             respository_owner=repository['owner']['login'],
-            user_id=github_requests.get_current_user_id() if request.form['action'] == 'take-the-stick' else None
+            user_id=github_requests.get_current_user_id() if form['action'] == 'take-the-stick' else None
         )
 
-    return redirect(url_for('repositories', installation_id=installation_id))
+    return RedirectResponse(request.url_for('repositories', installation_id=installation_id), status_code=303)
 
 
-@app.route('/merge/<int:installation_id>/<jira_key>', methods=['GET'])
-def merge(installation_id, jira_key):
+@app.route('/merge/{installation_id:int}/{jira_key:str}', methods=['GET'])
+async def merge(request):
+    installation_id = request.path_params['installation_id']
+    installation_id = request.path_params['jira_key']
     # file_contents = github_requests.get_file_contents(
     #     installation_id=installation_id,
     #     repository_name='Athena',
@@ -96,38 +107,39 @@ def merge(installation_id, jira_key):
 
 
 @app.route('/signin')
-def signin():
+def signin(request):
     try:
         github_app.raise_if_user_not_signed_in()
-        return redirect(url_for('index'))
+        return RedirectResponse(request.url_for('index'))
     except SignInNeededException as sine:
-        return render_template('signin.html', signin_url=sine.signin_url)
+        return templates.TemplateResponse(
+            'signin.html', {
+                'request': request,
+                'signin_url': sine.signin_url,
+            }
+        )
 
 
 @app.route('/signout')
-def signout():
+async def signout(request):
     github_app.signout()
-    return redirect(url_for('index'))
+    return RedirectResponse(request.url_for('index'))
 
 
 @app.route('/github-event-handler', methods=['POST'])
-def github_event_handler():
+async def github_event_handler(request):
     try:
         event_data = github_app.handle_event()
     except BadEventSignatureException:
-        return abort(400)
+        raise HTTPException(400)
 
     return {'success': True}
 
 
 @app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(
-        os.path.join(app.root_path, 'static'),
-        'favicon.ico',
-        mimetype='image/vnd.microsoft.icon',
-    )
+async def favicon(request):
+    return FileResponse('static/favicon.ico')
 
 
 if __name__ == '__main__':
-    app.run()
+    uvicorn.run(app, host='0.0.0.0', port=8000)

@@ -128,7 +128,7 @@ class FlaskGitHubApp:
 
     @staticmethod
     def _process_signin_redirect_uri(signin_redirect_uri):
-        return url_for(signin_redirect_uri, _external=True)
+        return url_for(signin_redirect_uri)
 
     def __getattr__(self, name):
         return getattr(self._github_app, name)
