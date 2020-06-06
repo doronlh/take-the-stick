@@ -42,9 +42,12 @@ async def index(request):
     except KeyError:
         installations = None
     except SignInNeededException:
-        return RedirectResponse(request.url_for('signin'))
+        return RedirectResponse(request.url_for('signin'), status_code=302)
     if installations and len(installations) == 1:
-        response = RedirectResponse(request.url_for('repositories', installation_id=installations[0]['id']))
+        response = RedirectResponse(
+            request.url_for('repositories', installation_id=installations[0]['id']),
+            status_code=302
+        )
     else:
         response = templates.TemplateResponse('index.html', {
             'request': request,
@@ -89,7 +92,7 @@ async def take_the_stick(request):
             user_id=github_requests.get_current_user_id() if form['action'] == 'take-the-stick' else None
         )
 
-    return RedirectResponse(request.url_for('repositories', installation_id=installation_id), status_code=303)
+    return RedirectResponse(request.url_for('repositories', installation_id=installation_id), status_code=302)
 
 
 @app.route('/merge/{installation_id:int}/{jira_key:str}', methods=['GET'])
@@ -110,7 +113,7 @@ async def merge(request):
 def signin(request):
     try:
         github_app.raise_if_user_not_signed_in()
-        return RedirectResponse(request.url_for('index'))
+        return RedirectResponse(request.url_for('index'), status_code=302)
     except SignInNeededException as sine:
         return templates.TemplateResponse(
             'signin.html', {
@@ -123,7 +126,7 @@ def signin(request):
 @app.route('/signout')
 async def signout(request):
     github_app.signout()
-    return RedirectResponse(request.url_for('index'))
+    return RedirectResponse(request.url_for('index'), status_code=302)
 
 
 @app.route('/github-event-handler', methods=['POST'])
