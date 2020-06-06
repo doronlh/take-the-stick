@@ -114,8 +114,9 @@ class StarletteSessionStore(SessionStore):
     ###############
 
     @property
-    def event_payload(self):
-        return _request().data
+    async def event_payload(self):
+        body = await _request().body()
+        return body
 
 
 class StarletteGitHubApp:

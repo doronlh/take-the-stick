@@ -129,7 +129,7 @@ class SessionStore(ABC):
 
     @property
     @abstractmethod
-    def event_payload(self):
+    async def event_payload(self):
         pass
 
 
@@ -337,8 +337,9 @@ class GitHubApp:
                 code=self._session_store.code, sent_state=self._session_store.sent_state),
         }[token_type]()
 
-    def _is_event_signature_valid(self):
-        mac = hmac.new(self._webhook_secret.encode(), msg=self._session_store.event_payload, digestmod='sha1')
+    async def _is_event_signature_valid(self):
+        msg = await self._session_store.event_payload
+        mac = hmac.new(self._webhook_secret.encode(), msg=msg, digestmod='sha1')
         return hmac.compare_digest(mac.hexdigest(), self._session_store.event_signature)
 
     def v3_request(self, requests_method, token_type, url, data=None, installation_id=None):
@@ -388,10 +389,12 @@ class GitHubApp:
         self._session_store.refresh_token = None
         self._session_store.refresh_token_expiry = None
 
-    def handle_event(self):
-        event_payload = json.loads(self._session_store.event_payload.decode())
+    async def handle_event(self):
+        event_signature_valid = await self._is_event_signature_valid()
 
-        if self._is_event_signature_valid():
+        if event_signature_valid:
+            event_payload = await self._session_store.event_payload
+            event_payload = json.loads(event_payload.decode())
             return EventData(
                 name=self._session_store.event_name,
                 delivery_id=self._session_store.event_delivery_id,

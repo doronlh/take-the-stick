@@ -7,7 +7,7 @@ from starlette.datastructures import Secret
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
 from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import RedirectResponse, FileResponse
+from starlette.responses import RedirectResponse, FileResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
 from starlette.templating import Jinja2Templates
 
@@ -98,7 +98,7 @@ async def take_the_stick(request):
 @app.route('/merge/{installation_id:int}/{jira_key:str}', methods=['GET'])
 async def merge(request):
     installation_id = request.path_params['installation_id']
-    installation_id = request.path_params['jira_key']
+    jira_key = request.path_params['jira_key']
     # file_contents = github_requests.get_file_contents(
     #     installation_id=installation_id,
     #     repository_name='Athena',
@@ -132,11 +132,10 @@ async def signout(request):
 @app.route('/github-event-handler', methods=['POST'])
 async def github_event_handler(request):
     try:
-        event_data = github_app.handle_event()
+        event_data = await github_app.handle_event()
     except BadEventSignatureException:
         raise HTTPException(400)
-
-    return {'success': True}
+    return JSONResponse({'success': True})
 
 
 @app.route('/favicon.ico')
