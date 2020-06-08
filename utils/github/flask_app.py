@@ -19,7 +19,7 @@ class FlaskSessionStore(SessionStore):
         return session.get(self._ACCESS_TOKEN_SESSION_NAME)
 
     @access_token.setter
-    def access_token(self, val):
+    def get_access_token(self, val):
         session[self._ACCESS_TOKEN_SESSION_NAME] = val
 
     # access_token_expiry

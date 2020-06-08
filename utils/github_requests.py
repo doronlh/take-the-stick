@@ -2,21 +2,22 @@ class GitHubRequests:
     def __init__(self, github_app):
         self._github_app = github_app
 
-    def get_installations_for_user(self):
-        return self._github_app.v3_user_get('/user/installations')['installations']
+    async def get_installations_for_user(self):
+        return (await self._github_app.v3_user_get('/user/installations'))['installations']
 
-    def get_installation(self, installation_id):
-        return self._github_app.v3_app_get(f'/app/installations/{installation_id}')
+    async def get_installation(self, installation_id):
+        return await self._github_app.v3_app_get(f'/app/installations/{installation_id}')
 
-    def get_repositories(self, installation_id):
+    async def get_repositories(self, installation_id):
         try:
             repositories = (
-                self._github_app.v3_user_get(f'/user/installations/{installation_id}/repositories')['repositories']
+                (await self._github_app.v3_user_get(f'/user/installations/{installation_id}/repositories'))[
+                    'repositories']
             )
         except KeyError:
             return None
 
-        return [self._github_app.v4_installation_request(f'''
+        return [(await self._github_app.v4_installation_request(f'''
             query {{
                 repository(name: "{repository['name']}", owner: "{repository['owner']['login']}") {{
                     nameWithOwner
@@ -50,13 +51,13 @@ class GitHubRequests:
                     }}
                 }}
             }}
-        ''', installation_id=installation_id)['repository'] for repository in repositories]
+        ''', installation_id=installation_id))['repository'] for repository in repositories]
 
-    def get_current_user_id(self):
-        return self._github_app.v4_user_request('query { viewer { id }}')['viewer']['id']
+    async def get_current_user_id(self):
+        return (await self._github_app.v4_user_request('query { viewer { id }}'))['viewer']['id']
 
-    def set_branch_protection(self, installation_id, repository_name, respository_owner, user_id):
-        branch_protection_rule_id = self._github_app.v4_installation_request(f'''
+    async def set_branch_protection(self, installation_id, repository_name, respository_owner, user_id):
+        branch_protection_rule_id = (await self._github_app.v4_installation_request(f'''
             query {{
                 repository(name: "{repository_name}", owner: "{respository_owner}") {{
                     branchProtectionRules(first: 1) {{
@@ -66,7 +67,7 @@ class GitHubRequests:
                     }}
                 }}
             }}
-        ''', installation_id=installation_id)['repository']['branchProtectionRules']['nodes'][0]['id']
+        ''', installation_id=installation_id))['repository']['branchProtectionRules']['nodes'][0]['id']
 
         if user_id:
             push_actor_ids = f'"{user_id}"'
@@ -75,7 +76,7 @@ class GitHubRequests:
             push_actor_ids = ''
             restrict_pushes = 'false'
 
-        self._github_app.v4_installation_request(f'''
+        await self._github_app.v4_installation_request(f'''
             mutation {{
                 updateBranchProtectionRule(input: {{
                         branchProtectionRuleId: "{branch_protection_rule_id}",
@@ -98,8 +99,8 @@ class GitHubRequests:
             }}
         ''', installation_id=installation_id)
 
-    def get_file_contents(self, installation_id, repository_name, repository_owner, branch, path):
-        return self._github_app.v4_installation_request(f'''
+    async def get_file_contents(self, installation_id, repository_name, repository_owner, branch, path):
+        return await self._github_app.v4_installation_request(f'''
             query {{
                 repository(name: "{repository_name}", owner: "{repository_owner}") {{
                     object(expression: "{branch}:{path}") {{

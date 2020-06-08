@@ -1,15 +1,14 @@
 import calendar
 import hmac
 import json
-import requests
 from abc import ABC, abstractmethod
+from aiographql.client import GraphQLClient, GraphQLRequest
+from aiohttp import ClientSession
 from base64 import b64encode
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum, auto
 from functools import partialmethod
-from gql import gql, Client
-from gql.transport.requests import RequestsHTTPTransport
 from graphql import build_client_schema
 from jwcrypto.jwt import JWT
 from jwcrypto.jwk import JWK
@@ -204,10 +203,21 @@ class GitHubApp:
         self._current_app_token_expiry = None
         self._current_installation_tokens = {}
         self._current_installation_token_expiries = {}
+        self._client_session = None
 
         _cache_v4_schema()
 
-    def _read_private_key(self, private_key_path):
+    async def _get_client_session(self):
+        if self._client_session is None:
+            self._client_session = ClientSession()
+        return self._client_session
+
+    async def close(self):
+        if self._client_session:
+            await self._client_session.close()
+
+    @staticmethod
+    def _read_private_key(private_key_path):
         with open(private_key_path, 'rb') as file:
             private_key = file.read()
         return private_key
@@ -255,11 +265,11 @@ class GitHubApp:
             self._current_app_token = token.serialize()
         return self._current_app_token
 
-    def _get_installation_token(self, installation_id):
+    async def _get_installation_token(self, installation_id):
 
         expired = self._is_token_expired(self._current_installation_token_expiries.get(installation_id))
         if expired:
-            response = self.v3_app_post(f'/app/installations/{installation_id}/access_tokens')
+            response = await self.v3_app_post(f'/app/installations/{installation_id}/access_tokens')
             try:
                 # get the values from the response dict before assigning to self._current_installation_tokenxxx
                 # since we want to make sure both keys exist. If one doesn't exist then the KeyError will be raised
@@ -272,7 +282,7 @@ class GitHubApp:
                 return None
         return self._current_installation_tokens[installation_id]
 
-    def _get_access_token(self, code=None, sent_state=None):
+    async def _get_access_token(self, code=None, sent_state=None):
         current_access_token = self._session_store.access_token
         access_token_expired = self._is_token_expired(self._session_store.access_token_expiry)
         current_refresh_token = self._session_store.refresh_token
@@ -299,11 +309,13 @@ class GitHubApp:
 
         now_timestamp = self._get_now_timestamp()
 
-        response = requests.post(
-            self._GITHUB_ACCESS_TOKEN_URL,
-            params=request_params,
-            headers=self._GITHUB_ACCESS_TOKEN_HEADERS
-        ).json()
+        request_kwargs = {
+            'url': self._GITHUB_ACCESS_TOKEN_URL,
+            'params': request_params,
+            'headers': self._GITHUB_ACCESS_TOKEN_HEADERS,
+        }
+        async with (await self._get_client_session()).post(**request_kwargs) as response:
+            response = await response.json()
 
         try:
             current_access_token = response['access_token']
@@ -329,59 +341,62 @@ class GitHubApp:
             state=state
         )
 
-    def _get_token_for_request(self, token_type, installation_id=None):
-        return {
-            TokenType.APP: lambda: self._get_app_token(),
-            TokenType.INSTALLATION: lambda: self._get_installation_token(installation_id),
-            TokenType.ACCESS: lambda: self._get_access_token(
-                code=self._session_store.code, sent_state=self._session_store.sent_state),
-        }[token_type]()
+    async def _get_token_for_request(self, token_type, installation_id=None):
+        if token_type == TokenType.APP:
+            return self._get_app_token()
+        elif token_type == TokenType.INSTALLATION:
+            return await self._get_installation_token(installation_id)
+        elif token_type == TokenType.ACCESS:
+            return await self._get_access_token(
+                code=self._session_store.code, sent_state=self._session_store.sent_state)
+        else:
+            raise ValueError()
 
     async def _is_event_signature_valid(self):
         msg = await self._session_store.event_payload
         mac = hmac.new(self._webhook_secret.encode(), msg=msg, digestmod='sha1')
         return hmac.compare_digest(mac.hexdigest(), self._session_store.event_signature)
 
-    def v3_request(self, requests_method, token_type, url, data=None, installation_id=None):
-        return requests_method(
-            f'https://api.github.com{url}',
-            data=data,
-            headers={
-                'Authorization': f'Bearer {self._get_token_for_request(token_type, installation_id)}',
+    async def v3_request(self, session_method_name, token_type, url, data=None, installation_id=None):
+        client_session = await self._get_client_session()
+        session_method = getattr(client_session, session_method_name)
+        kwargs = {
+            'url': f'https://api.github.com{url}',
+            'data': data,
+            'headers': {
+                'Authorization': f'Bearer {await self._get_token_for_request(token_type, installation_id)}',
                 'Accept': 'application/vnd.github.machine-man-preview+json',
             }
-        ).json()
+        }
 
-    v3_app_get = partialmethod(v3_request, requests.get, TokenType.APP)
-    v3_app_post = partialmethod(v3_request, requests.post, TokenType.APP)
-    v3_installation_get = partialmethod(v3_request, requests.get, TokenType.INSTALLATION)
-    v3_installation_post = partialmethod(v3_request, requests.post, TokenType.INSTALLATION)
-    v3_user_get = partialmethod(v3_request, requests.get, TokenType.ACCESS)
-    v3_user_post = partialmethod(v3_request, requests.post, TokenType.ACCESS)
+        async with session_method(**kwargs) as response:
+            return await response.json()
 
-    def v4_request(self, token_type, request_string, installation_id=None):
+    v3_app_get = partialmethod(v3_request, 'get', TokenType.APP)
+    v3_app_post = partialmethod(v3_request, 'post', TokenType.APP)
+    v3_installation_get = partialmethod(v3_request, 'get', TokenType.INSTALLATION)
+    v3_installation_post = partialmethod(v3_request, 'post', TokenType.INSTALLATION)
+    v3_user_get = partialmethod(v3_request, 'get', TokenType.ACCESS)
+    v3_user_post = partialmethod(v3_request, 'post', TokenType.ACCESS)
 
-        transport = RequestsHTTPTransport(
-            url='https://api.github.com/graphql',
+    async def v4_request(self, token_type, request_string, installation_id=None):
+
+        client = GraphQLClient(
+            endpoint='https://api.github.com/graphql',
             headers={
-                'Authorization': f'Bearer {self._get_token_for_request(token_type, installation_id)}'
+                'Authorization': f'Bearer {await self._get_token_for_request(token_type, installation_id)}'
             },
-            use_json=True,
+            schema=_V4_SCHEMA,
         )
-
-        client = Client(
-            transport=transport,
-            schema=_V4_SCHEMA
-        )
-
-        return client.execute(gql(request_string))
+        request = GraphQLRequest(query=request_string)
+        return (await client.query(request=request)).data
 
     v4_app_request = partialmethod(v4_request, TokenType.APP)
     v4_installation_request = partialmethod(v4_request, TokenType.INSTALLATION)
     v4_user_request = partialmethod(v4_request, TokenType.ACCESS)
 
-    def raise_if_user_not_signed_in(self):
-        self._get_token_for_request(TokenType.ACCESS)
+    async def raise_if_user_not_signed_in(self):
+        await self._get_token_for_request(TokenType.ACCESS)
 
     def signout(self):
         self._session_store.access_token = None

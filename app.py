@@ -26,19 +26,25 @@ middleware = [
     Middleware(RequestContextMiddleware),
 ]
 
-app = Starlette(debug=True, middleware=middleware)
-templates = Jinja2Templates(directory='templates')
-app.mount('/static', StaticFiles(directory='static'), name='static')
 
 github_app = StarletteGitHubApp(config, 'signin')
 github_requests = GitHubRequests(github_app)
+
+
+async def on_shutdown():
+    await github_app.close()
+
+
+app = Starlette(debug=True, middleware=middleware, on_shutdown=[on_shutdown])
+templates = Jinja2Templates(directory='templates')
+app.mount('/static', StaticFiles(directory='static'), name='static')
 # configure_logging(app)
 
 
 @app.route('/')
 async def index(request):
     try:
-        installations = github_requests.get_installations_for_user()
+        installations = await github_requests.get_installations_for_user()
     except KeyError:
         installations = None
     except SignInNeededException:
@@ -60,8 +66,8 @@ async def index(request):
 @app.route('/repositories/{installation_id:int}')
 async def repositories(request):
     installation_id = request.path_params['installation_id']
-    installation = github_requests.get_installation(installation_id)
-    repositories_ = github_requests.get_repositories(installation_id)
+    installation = await github_requests.get_installation(installation_id)
+    repositories_ = await github_requests.get_repositories(installation_id)
     repository_names = [repository['nameWithOwner'] for repository in repositories_]
     grouped_pull_requests = defaultdict(lambda: dict.fromkeys(repository_names, None))
     for repository in repositories_:
@@ -84,12 +90,12 @@ async def repositories(request):
 async def take_the_stick(request):
     installation_id = request.path_params['installation_id']
     form = await request.form()
-    for repository in github_requests.get_repositories(installation_id):
-        github_requests.set_branch_protection(
+    for repository in await github_requests.get_repositories(installation_id):
+        await github_requests.set_branch_protection(
             installation_id=installation_id,
             repository_name=repository['name'],
             respository_owner=repository['owner']['login'],
-            user_id=github_requests.get_current_user_id() if form['action'] == 'take-the-stick' else None
+            user_id=(await github_requests.get_current_user_id()) if form['action'] == 'take-the-stick' else None
         )
 
     return RedirectResponse(request.url_for('repositories', installation_id=installation_id), status_code=302)
@@ -99,7 +105,7 @@ async def take_the_stick(request):
 async def merge(request):
     installation_id = request.path_params['installation_id']
     jira_key = request.path_params['jira_key']
-    # file_contents = github_requests.get_file_contents(
+    # file_contents = await github_requests.get_file_contents(
     #     installation_id=installation_id,
     #     repository_name='Athena',
     #     repository_owner='CyberJackGit',
@@ -110,9 +116,9 @@ async def merge(request):
 
 
 @app.route('/signin')
-def signin(request):
+async def signin(request):
     try:
-        github_app.raise_if_user_not_signed_in()
+        await github_app.raise_if_user_not_signed_in()
         return RedirectResponse(request.url_for('index'), status_code=302)
     except SignInNeededException as sine:
         return templates.TemplateResponse(
@@ -133,6 +139,7 @@ async def signout(request):
 async def github_event_handler(request):
     try:
         event_data = await github_app.handle_event()
+        print(event_data)
     except BadEventSignatureException:
         raise HTTPException(400)
     return JSONResponse({'success': True})

@@ -1,8 +1,9 @@
 aiofiles==0.5.0
+aiohttp[speedups]==3.6.2
+aiographql-client==1.0.1
 colorlog==4.1.0
 Flask==1.1.2
-gql==0.5.0
-graphql-core==2.3.1
+graphql-core==3.1.1
 jwcrypto==0.7
 python-dotenv==0.13.0
 python-multipart==0.0.5
