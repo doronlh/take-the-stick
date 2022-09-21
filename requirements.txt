@@ -4,7 +4,7 @@ aiographql-client==1.0.1
 colorlog==4.1.0
 Flask==1.1.2
 graphql-core==3.1.1
-jwcrypto==0.7
+jwcrypto==1.4
 python-dotenv==0.13.0
 python-multipart==0.0.5
 requests==2.23.0
